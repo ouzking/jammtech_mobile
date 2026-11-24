@@ -1,0 +1,29 @@
+name: jammtech
+description: "JammTech — La paix dans votre poche. Sécurité personnelle, alertes SOS et maison connectée."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_maps_flutter: ^2.6.0
+  geolocator: ^10.1.0
+  animations: ^2.0.7
+  image_picker: ^1.0.7
+  lottie: ^3.1.0
+  flutter_tts: ^3.8.5
+  google_fonts: ^6.3.2
+  url_launcher: ^6.3.2
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,43 @@
+import 'package:flutter/material.dart';
+
+import 'screens/screens.dart';
+
+abstract final class AppRoutes {
+  static const splash = '/';
+  static const onboarding = '/onboarding';
+  static const login = '/login';
+  static const register = '/register';
+  static const forgotPassword = '/forgot_password';
+  static const home = '/home';
+  static const map = '/map';
+  static const alerts = '/alerts';
+  static const sos = '/sos';
+  static const smartHome = '/smart_home';
+  static const profile = '/profile';
+  static const videoHistory = '/video_history';
+  static const settings = '/settings';
+  static const security = '/security';
+  static const notifications = '/notifications';
+  static const help = '/help';
+}
+
+final Map<String, WidgetBuilder> appRoutes = {
+  AppRoutes.splash: (_) => const SplashScreen(),
+  AppRoutes.onboarding: (_) => const OnboardingScreen(),
+  AppRoutes.login: (_) => const LoginScreen(),
+  AppRoutes.register: (_) => const RegisterScreen(),
+  AppRoutes.forgotPassword: (_) => const ForgotPasswordScreen(),
+  // L'accueil est une coquille à onglets ; les autres routes ouvrent
+  // directement l'onglet ou l'écran concerné.
+  AppRoutes.home: (_) => const MainShell(),
+  AppRoutes.map: (_) => const MapScreen(standalone: true),
+  AppRoutes.alerts: (_) => const AlertsScreen(standalone: true),
+  AppRoutes.smartHome: (_) => const SmartHomeScreen(standalone: true),
+  AppRoutes.profile: (_) => const ProfileScreen(standalone: true),
+  AppRoutes.sos: (_) => const SosScreen(),
+  AppRoutes.videoHistory: (_) => const VideoHistoryScreen(),
+  AppRoutes.settings: (_) => const SettingsScreen(),
+  AppRoutes.security: (_) => const SecurityScreen(),
+  AppRoutes.notifications: (_) => const NotificationsScreen(),
+  AppRoutes.help: (_) => const HelpScreen(),
+};
