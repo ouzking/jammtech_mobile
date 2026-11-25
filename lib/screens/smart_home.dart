@@ -5,10 +5,15 @@ import 'package:flutter/services.dart';
 
 import '../core/utils/formatters.dart';
 import '../core/widgets/widgets.dart';
-import '../data/demo_data.dart';
+import '../data/backend.dart';
 import '../data/models.dart';
+import '../data/repositories/account_repository.dart';
+import '../data/repositories/home_repository.dart';
 import '../routes.dart';
+import '../services/location_service.dart';
+import '../services/session.dart';
 import 'app_page.dart';
+import 'disarm_keypad.dart';
 
 class SmartHomeScreen extends StatefulWidget {
   const SmartHomeScreen({super.key, this.standalone = false});
@@ -20,108 +25,297 @@ class SmartHomeScreen extends StatefulWidget {
 }
 
 class _SmartHomeScreenState extends State<SmartHomeScreen> {
-  ArmMode _mode = ArmMode.away;
-  final _devices = DemoData.devices();
+  final _home = HomeRepository.instance;
+  ArmMode? _pendingMode;
 
-  void _setMode(ArmMode m) {
-    if (m == _mode) return;
-    HapticFeedback.mediumImpact();
-    setState(() => _mode = m);
-    showAppSnack(
-      context,
-      'Mode « ${m.label} » activé',
-      icon: m.icon,
-      color: m.color,
-    );
-  }
+  String? get _homeId => AccountRepository.instance.dashboard.value?.homeId;
+
+  ArmMode get _mode =>
+      _pendingMode ??
+      AccountRepository.instance.dashboard.value?.armMode ??
+      ArmMode.disarmed;
 
   @override
-  Widget build(BuildContext context) {
-    return AppPage(
-      title: 'Ma maison',
-      subtitle: 'Résidence principale',
-      standalone: widget.standalone,
-      glow: _mode.color == AppColors.textSecondary
-          ? AppColors.brand
-          : _mode.color,
-      actions: [
-        GlassIconButton(
-          icon: Icons.video_library_outlined,
-          tooltip: 'Enregistrements',
-          onPressed: () => Navigator.pushNamed(context, AppRoutes.videoHistory),
-        ),
-      ],
-      slivers: [
-        PageSection(
-          child: _ArmSelector(mode: _mode, onChanged: _setMode),
-        ),
-        const PageSection(child: _LiveCameraCard()),
-        const PageSection(bottom: 0, child: SectionHeader('Appareils')),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.page),
-          sliver: SliverGrid.count(
-            crossAxisCount: 2,
-            mainAxisSpacing: Gap.sm,
-            crossAxisSpacing: Gap.sm,
-            childAspectRatio: 1.15,
-            children: [
-              for (final d in _devices)
-                _DeviceTile(
-                  device: d,
-                  onToggle: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => d.on = !d.on);
-                  },
-                ),
-            ],
-          ),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: Gap.xl)),
-        PageSection(
-          child: AppCard(
-            onTap: () => Navigator.pushNamed(context, AppRoutes.videoHistory),
-            child: Row(
+  void initState() {
+    super.initState();
+    if (Backend.enabled) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final d = await AccountRepository.instance.refreshDashboard();
+      await _home.refreshDevices(d.homeId);
+    } on AppException catch (e) {
+      if (mounted) _error(e.message);
+    }
+  }
+
+  void _error(String m) => showAppSnack(
+    context,
+    m,
+    icon: Icons.error_outline_rounded,
+    color: AppColors.danger,
+  );
+
+  Future<void> _setMode(ArmMode m) async {
+    if (m == _mode || _pendingMode != null) return;
+    if (m == ArmMode.disarmed) return _disarm();
+
+    HapticFeedback.mediumImpact();
+    setState(() => _pendingMode = m);
+    try {
+      final r = await _home.setArmMode(_homeId, m, clientDevice: 'Mobile');
+      await AccountRepository.instance.refreshDashboard();
+      if (!mounted) return;
+      if (r.warnings.isEmpty) {
+        showAppSnack(
+          context,
+          'Mode « ${m.label} » activé',
+          icon: m.icon,
+          color: m.color,
+        );
+      } else {
+        _showWarnings(m, r.warnings);
+      }
+    } on AppException catch (e) {
+      if (mounted) _error(e.message);
+    } finally {
+      if (mounted) setState(() => _pendingMode = null);
+    }
+  }
+
+  /// Désarmement par code.
+  ///
+  /// ⚠️ Code de contrainte : ce chemin est **strictement identique** quel que
+  /// soit le code saisi (même message, même vibration, même écran) et la
+  /// position est envoyée à chaque fois. Ne jamais ajouter de condition sur
+  /// la réponse du serveur.
+  Future<void> _disarm() async {
+    final code = await showDisarmKeypad(context);
+    if (code == null || !mounted) return;
+
+    setState(() => _pendingMode = ArmMode.disarmed);
+    try {
+      final pos = await _positionForDisarm();
+      await _home.disarm(
+        homeId: _homeId,
+        code: code,
+        clientDevice: 'Mobile',
+        lat: pos?.$1,
+        lng: pos?.$2,
+        accuracy: pos?.$3,
+      );
+      HapticFeedback.mediumImpact();
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        'Maison désarmée',
+        icon: ArmMode.disarmed.icon,
+        color: AppColors.textSecondary,
+      );
+      Session.refreshAll().ignore();
+    } on AppException catch (e) {
+      HapticFeedback.heavyImpact();
+      if (mounted) _error(e.message);
+    } finally {
+      if (mounted) setState(() => _pendingMode = null);
+    }
+  }
+
+  /// Position (2 s max) ; même délai d'attente quel que soit le code saisi.
+  Future<(double, double, double)?> _positionForDisarm() async {
+    try {
+      final p =
+          await LocationService.instance.currentPosition().timeout(
+            const Duration(seconds: 2),
+          ) ??
+          LocationService.instance.lastPosition.value;
+      return p == null ? null : (p.latitude, p.longitude, p.accuracy);
+    } catch (_) {
+      final p = LocationService.instance.lastPosition.value;
+      return p == null ? null : (p.latitude, p.longitude, p.accuracy);
+    }
+  }
+
+  void _showWarnings(ArmMode m, List<ArmWarning> warnings) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) {
+        final t = Theme.of(context).textTheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.page, 0, Gap.page, Gap.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const IconBadge(
-                  icon: Icons.video_library_rounded,
-                  color: AppColors.violet,
+                Row(
+                  children: [
+                    IconBadge(icon: m.icon, color: m.color),
+                    const SizedBox(width: Gap.md),
+                    Expanded(
+                      child: Text(
+                        'Mode « ${m.label} » activé',
+                        style: t.titleLarge,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: Gap.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Historique des enregistrements',
-                        style: Theme.of(context).textTheme.titleSmall,
+                const SizedBox(height: Gap.md),
+                Text(
+                  'Points à vérifier :',
+                  style: t.bodyMedium?.copyWith(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: Gap.sm),
+                for (final w in warnings)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: Gap.xs),
+                    child: AppCard(
+                      color: AppColors.warning.withValues(alpha: 0.08),
+                      borderColor: AppColors.warning.withValues(alpha: 0.3),
+                      child: Row(
+                        children: [
+                          Icon(switch (w.code) {
+                            'device_offline' => Icons.wifi_off_rounded,
+                            'lock_unlocked' => Icons.lock_open_rounded,
+                            _ => Icons.sensor_door_outlined,
+                          }, color: AppColors.warning),
+                          const SizedBox(width: Gap.sm),
+                          Expanded(child: Text(w.message, style: t.bodyMedium)),
+                        ],
                       ),
-                      Text(
-                        '${DemoData.videos.length} vidéos · 30 jours de stockage',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.textTertiary,
+                const SizedBox(height: Gap.md),
+                AppButton.secondary(
+                  label: 'Compris',
+                  onPressed: () => Navigator.pop(context),
                 ),
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Future<void> _toggle(SmartDevice d) async {
+    HapticFeedback.selectionClick();
+    try {
+      await _home.setDeviceOn(d, !d.on);
+    } on AppException catch (e) {
+      if (mounted) _error(e.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder(
+      valueListenable: AccountRepository.instance.dashboard,
+      builder: (context, dashboard, _) => ValueListenableBuilder(
+        valueListenable: _home.devices,
+        builder: (context, devices, _) => AppPage(
+          title: 'Ma maison',
+          subtitle: dashboard?.homeName ?? 'Résidence principale',
+          standalone: widget.standalone,
+          onRefresh: _refresh,
+          glow: _mode.color == AppColors.textSecondary
+              ? AppColors.brand
+              : _mode.color,
+          actions: [
+            GlassIconButton(
+              icon: Icons.video_library_outlined,
+              tooltip: 'Enregistrements',
+              onPressed: () =>
+                  Navigator.pushNamed(context, AppRoutes.videoHistory),
+            ),
+          ],
+          slivers: [
+            PageSection(
+              child: _ArmSelector(
+                mode: _mode,
+                busy: _pendingMode != null,
+                onChanged: _setMode,
+              ),
+            ),
+            const PageSection(child: _LiveCameraCard()),
+            const PageSection(bottom: 0, child: SectionHeader('Appareils')),
+            if (devices.isEmpty)
+              PageSection(
+                child: Text(
+                  'Aucun appareil connecté pour l’instant.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: Gap.page),
+                sliver: SliverGrid.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: Gap.sm,
+                  crossAxisSpacing: Gap.sm,
+                  childAspectRatio: 1.15,
+                  children: [
+                    for (final d in devices)
+                      _DeviceTile(device: d, onToggle: () => _toggle(d)),
+                  ],
+                ),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: Gap.xl)),
+            PageSection(
+              child: AppCard(
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.videoHistory),
+                child: Row(
+                  children: [
+                    const IconBadge(
+                      icon: Icons.video_library_rounded,
+                      color: AppColors.violet,
+                    ),
+                    const SizedBox(width: Gap.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Historique des enregistrements',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          Text(
+                            'Conservés 30 jours',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
 class _ArmSelector extends StatelessWidget {
-  const _ArmSelector({required this.mode, required this.onChanged});
+  const _ArmSelector({
+    required this.mode,
+    required this.onChanged,
+    this.busy = false,
+  });
 
   final ArmMode mode;
   final ValueChanged<ArmMode> onChanged;
+  final bool busy;
 
   String get _description => switch (mode) {
     ArmMode.disarmed =>
@@ -174,7 +368,7 @@ class _ArmSelector extends StatelessWidget {
                               button: true,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () => onChanged(m),
+                                onTap: busy ? null : () => onChanged(m),
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [

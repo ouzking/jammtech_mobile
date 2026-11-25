@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'core/theme/app_theme.dart';
+import 'data/backend.dart';
 import 'routes.dart';
+import 'screens/app_lock.dart';
+import 'services/app_navigator.dart';
+import 'services/local_security.dart';
+import 'services/push_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -14,6 +19,21 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
+  await Backend.init();
+  await PushService.instance.init();
+  await LocalSecurity.instance.load();
+  // Verrouillage après 1 minute en arrière-plan (si un PIN est défini).
+  LocalSecurity.instance.onLockRequired = () {
+    appNavigator?.push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => AppLockScreen(
+          onUnlocked: () => Navigator.pop(context),
+          onSos: () => Navigator.pushNamed(context, AppRoutes.sos),
+        ),
+      ),
+    );
+  };
   runApp(const JammTechApp());
 }
 
@@ -27,11 +47,13 @@ class JammTechApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'JammTech',
+      navigatorKey: appNavigatorKey,
       theme: AppTheme.dark,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.dark,
       initialRoute: initialRoute,
       routes: appRoutes,
+      onGenerateRoute: onGenerateRoute,
     );
   }
 }

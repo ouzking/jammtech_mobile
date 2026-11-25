@@ -6,6 +6,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../core/utils/formatters.dart';
 import '../core/widgets/widgets.dart';
+import '../data/backend.dart';
+import '../data/repositories/account_repository.dart';
+import '../data/repositories/location_repository.dart';
 import '../routes.dart';
 import 'emergency_sheets.dart';
 
@@ -28,7 +31,11 @@ class _MapScreenState extends State<MapScreen> {
   _LocStatus _status = _LocStatus.loading;
   Position? _position;
   bool _follow = true;
-  bool _sharing = false;
+  late bool _sharing =
+      AccountRepository.instance.dashboard.value?.locationSharing ?? false;
+  bool _sharingBusy = false;
+  List<RiskZone> _risks = const [];
+  DateTime? _risksAt;
 
   LatLng get _latLng => _position == null
       ? _dakar
@@ -89,6 +96,16 @@ class _MapScreenState extends State<MapScreen> {
       _position = p;
       _status = _LocStatus.live;
     });
+    // Zones à risque : rafraîchies au plus toutes les 2 minutes.
+    final now = DateTime.now();
+    if (_risksAt == null || now.difference(_risksAt!).inMinutes >= 2) {
+      _risksAt = now;
+      LocationRepository.instance.nearbyRisks(p.latitude, p.longitude).then((
+        r,
+      ) {
+        if (mounted) setState(() => _risks = r);
+      });
+    }
     if (_follow) {
       _map?.animateCamera(CameraUpdate.newLatLngZoom(_latLng, 16.5));
     }
@@ -99,17 +116,36 @@ class _MapScreenState extends State<MapScreen> {
     _map?.animateCamera(CameraUpdate.newLatLngZoom(_latLng, 16.5));
   }
 
-  void _toggleSharing() {
-    setState(() => _sharing = !_sharing);
-    // TODO: démarrer / arrêter le partage de position côté serveur.
-    showAppSnack(
-      context,
-      _sharing
-          ? 'Position partagée avec vos proches'
-          : 'Partage de position arrêté',
-      icon: _sharing ? Icons.share_location_rounded : Icons.location_disabled,
-      color: _sharing ? AppColors.success : AppColors.textSecondary,
-    );
+  Future<void> _toggleSharing() async {
+    if (_sharingBusy) return;
+    final start = !_sharing;
+    setState(() => _sharingBusy = true);
+    try {
+      start
+          ? await LocationRepository.instance.startShare()
+          : await LocationRepository.instance.stopShare();
+      if (!mounted) return;
+      setState(() => _sharing = start);
+      AccountRepository.instance.refreshDashboard().ignore();
+      showAppSnack(
+        context,
+        start
+            ? 'Position partagée avec vos proches pendant 8 h'
+            : 'Partage de position arrêté',
+        icon: start ? Icons.share_location_rounded : Icons.location_disabled,
+        color: start ? AppColors.success : AppColors.textSecondary,
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        e.message,
+        icon: Icons.error_outline_rounded,
+        color: AppColors.danger,
+      );
+    } finally {
+      if (mounted) setState(() => _sharingBusy = false);
+    }
   }
 
   @override
@@ -125,7 +161,7 @@ class _MapScreenState extends State<MapScreen> {
           Positioned.fill(
             child: GoogleMap(
               initialCameraPosition: CameraPosition(target: _latLng, zoom: 14),
-              style: _darkMapStyle,
+              style: darkMapStyle,
               myLocationEnabled: _status == _LocStatus.live,
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
@@ -135,6 +171,20 @@ class _MapScreenState extends State<MapScreen> {
               onMapCreated: (c) => _map = c,
               onCameraMoveStarted: () {
                 if (_follow) setState(() => _follow = false);
+              },
+              markers: {
+                for (final (i, r) in _risks.indexed)
+                  Marker(
+                    markerId: MarkerId('risk$i'),
+                    position: LatLng(r.lat, r.lng),
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueOrange,
+                    ),
+                    infoWindow: InfoWindow(
+                      title: r.label,
+                      snippet: '${r.description} · à ${r.distance} m',
+                    ),
+                  ),
               },
               circles: {
                 if (_position != null)
@@ -493,7 +543,7 @@ class _SmallButton extends StatelessWidget {
 }
 
 /// Style de carte sombre assorti à la charte.
-const _darkMapStyle = '''
+const darkMapStyle = '''
 [
   {"elementType":"geometry","stylers":[{"color":"#0b1222"}]},
   {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},

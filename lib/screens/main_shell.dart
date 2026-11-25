@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/widgets/widgets.dart';
-import '../data/demo_data.dart';
+import '../data/repositories/alerts_repository.dart';
 import 'alerts.dart';
 import 'home.dart';
 import 'map.dart';
@@ -52,8 +52,9 @@ class MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
-      valueListenable: DemoData.alertsRevision,
-      builder: (context, _, _) => _buildScaffold(DemoData.unresolvedCount),
+      valueListenable: AlertsRepository.instance.alerts,
+      builder: (context, alerts, _) =>
+          _buildScaffold(alerts.where((a) => !a.resolved).length),
     );
   }
 

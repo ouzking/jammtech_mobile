@@ -6,10 +6,14 @@ import 'package:flutter/services.dart';
 
 import '../core/utils/formatters.dart';
 import '../core/widgets/widgets.dart';
+import '../data/backend.dart';
 import '../data/demo_data.dart';
+import '../data/repositories/contacts_repository.dart';
+import '../data/repositories/sos_repository.dart';
+import '../services/session.dart';
 import 'emergency_sheets.dart';
 
-enum _SosState { idle, countdown, sent }
+enum _SosState { idle, countdown, sending, sent, failed }
 
 /// Écran SOS : maintien de 3 s (anti-déclenchement accidentel),
 /// compte à rebours annulable de 5 s, puis confirmation d'envoi.
@@ -36,7 +40,9 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
   int _countdown = _countdownFrom;
   int _lastHapticStep = 0;
   Timer? _timer;
-  DateTime? _sentAt;
+  SosResult? _result;
+  String? _error;
+  bool _resolving = false;
 
   @override
   void dispose() {
@@ -102,13 +108,54 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _send() {
-    // TODO: envoyer l'alerte (position + contacts) au backend.
+  Future<void> _send() async {
     HapticFeedback.heavyImpact();
     setState(() {
-      _state = _SosState.sent;
-      _sentAt = DateTime.now();
+      _state = _SosState.sending;
+      _error = null;
     });
+    try {
+      // Les nouveaux essais réseau réutilisent la même clé (aucun doublon).
+      final r = await SosRepository.instance.trigger();
+      Session.refreshAll().ignore();
+      if (!mounted) return;
+      HapticFeedback.heavyImpact();
+      setState(() {
+        _result = r;
+        _state = _SosState.sent;
+      });
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _state = _SosState.failed;
+      });
+    }
+  }
+
+  Future<void> _resolve(String outcome) async {
+    setState(() => _resolving = true);
+    try {
+      await SosRepository.instance.resolve(outcome: outcome);
+      Session.refreshAll().ignore();
+      if (!mounted) return;
+      showAppSnack(
+        context,
+        outcome == 'cancelled'
+            ? 'Fausse alerte signalée à vos proches.'
+            : 'Vos proches ont été prévenus que vous êtes en sécurité.',
+      );
+      Navigator.maybePop(context);
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _resolving = false);
+      showAppSnack(
+        context,
+        e.message,
+        icon: Icons.error_outline_rounded,
+        color: AppColors.danger,
+      );
+    }
   }
 
   @override
@@ -130,7 +177,9 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
                     GlassIconButton(
                       icon: Icons.close_rounded,
                       tooltip: 'Fermer',
-                      onPressed: _state == _SosState.countdown
+                      onPressed:
+                          _state == _SosState.countdown ||
+                              _state == _SosState.sending
                           ? null
                           : () => Navigator.maybePop(context),
                     ),
@@ -139,12 +188,16 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
                       label: switch (_state) {
                         _SosState.idle => 'Prêt',
                         _SosState.countdown => 'Envoi imminent',
+                        _SosState.sending => 'Envoi en cours',
                         _SosState.sent => 'Alerte envoyée',
+                        _SosState.failed => 'Échec de l’envoi',
                       },
                       color: switch (_state) {
                         _SosState.idle => AppColors.success,
                         _SosState.countdown => AppColors.warning,
+                        _SosState.sending => AppColors.warning,
                         _SosState.sent => AppColors.danger,
+                        _SosState.failed => AppColors.danger,
                       },
                     ),
                     const Spacer(),
@@ -167,67 +220,75 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
                       child: child,
                     ),
                   ),
-                  child: _state == _SosState.sent
-                      ? _SentView(
-                          key: const ValueKey('sent'),
-                          sentAt: _sentAt!,
-                          onSafe: () => Navigator.maybePop(context),
-                        )
-                      : Column(
-                          key: const ValueKey('arm'),
-                          children: [
-                            const Spacer(),
-                            Text(
-                              active ? 'Envoi dans' : 'Alerte SOS',
-                              style: t.headlineMedium,
-                            ),
-                            const SizedBox(height: Gap.xs),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: Gap.xxl,
-                              ),
-                              child: Text(
-                                active
-                                    ? 'Vos proches et votre position seront transmis.'
-                                    : 'Maintenez le bouton 3 secondes pour alerter vos proches.',
-                                textAlign: TextAlign.center,
-                                style: t.bodyLarge?.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            _SosButton(
-                              hold: _hold,
-                              pulse: _pulse,
-                              countdown: active ? _countdown : null,
-                              onHoldStart: _startHold,
-                              onHoldEnd: _releaseHold,
-                            ),
-                            const Spacer(flex: 2),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                Gap.page,
-                                0,
-                                Gap.page,
-                                Gap.lg,
-                              ),
-                              child: AnimatedSwitcher(
-                                duration: Motion.medium,
-                                child: active
-                                    ? AppButton.secondary(
-                                        key: const ValueKey('cancel'),
-                                        label: 'Annuler l’alerte',
-                                        icon: Icons.close_rounded,
-                                        onPressed: _cancel,
-                                      )
-                                    : const _QuickCallRow(
-                                        key: ValueKey('calls'),
-                                      ),
-                              ),
-                            ),
-                          ],
+                  child: switch (_state) {
+                    _SosState.sent => _SentView(
+                      key: const ValueKey('sent'),
+                      result: _result!,
+                      resolving: _resolving,
+                      onResolve: _resolve,
+                    ),
+                    _SosState.sending => const _SendingView(
+                      key: ValueKey('sending'),
+                    ),
+                    _SosState.failed => _FailedView(
+                      key: const ValueKey('failed'),
+                      message: _error ?? '',
+                      onRetry: _send,
+                    ),
+                    _ => Column(
+                      key: const ValueKey('arm'),
+                      children: [
+                        const Spacer(),
+                        Text(
+                          active ? 'Envoi dans' : 'Alerte SOS',
+                          style: t.headlineMedium,
                         ),
+                        const SizedBox(height: Gap.xs),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: Gap.xxl,
+                          ),
+                          child: Text(
+                            active
+                                ? 'Vos proches et votre position seront transmis.'
+                                : 'Maintenez le bouton 3 secondes pour alerter vos proches.',
+                            textAlign: TextAlign.center,
+                            style: t.bodyLarge?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        _SosButton(
+                          hold: _hold,
+                          pulse: _pulse,
+                          countdown: active ? _countdown : null,
+                          onHoldStart: _startHold,
+                          onHoldEnd: _releaseHold,
+                        ),
+                        const Spacer(flex: 2),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            Gap.page,
+                            0,
+                            Gap.page,
+                            Gap.lg,
+                          ),
+                          child: AnimatedSwitcher(
+                            duration: Motion.medium,
+                            child: active
+                                ? AppButton.secondary(
+                                    key: const ValueKey('cancel'),
+                                    label: 'Annuler l’alerte',
+                                    icon: Icons.close_rounded,
+                                    onPressed: _cancel,
+                                  )
+                                : const _QuickCallRow(key: ValueKey('calls')),
+                          ),
+                        ),
+                      ],
+                    ),
+                  },
                 ),
               ),
             ],
@@ -469,14 +530,21 @@ class _QuickCallRow extends StatelessWidget {
 }
 
 class _SentView extends StatelessWidget {
-  const _SentView({super.key, required this.sentAt, required this.onSafe});
+  const _SentView({
+    super.key,
+    required this.result,
+    required this.resolving,
+    required this.onResolve,
+  });
 
-  final DateTime sentAt;
-  final VoidCallback onSafe;
+  final SosResult result;
+  final bool resolving;
+  final ValueChanged<String> onResolve;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
+    final contacts = ContactsRepository.instance.contacts.value;
     return ListView(
       padding: const EdgeInsets.fromLTRB(Gap.page, Gap.xl, Gap.page, Gap.lg),
       children: [
@@ -509,7 +577,7 @@ class _SentView extends StatelessWidget {
         ),
         const SizedBox(height: Gap.xs),
         Text(
-          'À ${clock(sentAt)} · Restez dans un lieu sûr si possible.',
+          'À ${clock(result.startedAt)} · Restez dans un lieu sûr si possible.',
           textAlign: TextAlign.center,
           style: t.bodyMedium?.copyWith(color: AppColors.textSecondary),
         ),
@@ -528,7 +596,7 @@ class _SentView extends StatelessWidget {
                   children: [
                     Text('Position partagée', style: t.titleSmall),
                     Text(
-                      'Mise à jour en continu',
+                      'Mise à jour en continu tant que l’alerte est active',
                       style: t.bodySmall?.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -540,43 +608,63 @@ class _SentView extends StatelessWidget {
             ],
           ),
         ),
-        const GroupLabel('Proches prévenus'),
-        SettingsGroup(
-          children: [
-            for (final c in DemoData.contacts)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Gap.md,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    ContactAvatar(contact: c, size: 38),
-                    const SizedBox(width: Gap.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(c.name, style: t.titleSmall),
-                          Text(
-                            c.relation,
-                            style: t.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.done_all_rounded,
-                      size: 18,
-                      color: AppColors.success,
-                    ),
-                  ],
+        const SizedBox(height: Gap.sm),
+        AppCard(
+          child: Row(
+            children: [
+              const IconBadge(icon: Icons.send_rounded, color: AppColors.info),
+              const SizedBox(width: Gap.md),
+              Expanded(
+                child: Text(
+                  result.created
+                      ? '${result.pushSent} notification(s) et ${result.smsSent} SMS envoyés'
+                            '${result.failed > 0 ? ' · ${result.failed} échec(s)' : ''}'
+                      : 'Vos proches ont été prévenus.',
+                  style: t.bodyMedium,
                 ),
               ),
-          ],
+            ],
+          ),
         ),
+        if (contacts.isNotEmpty) ...[
+          const GroupLabel('Proches prévenus'),
+          SettingsGroup(
+            children: [
+              for (final c in contacts)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Gap.md,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      ContactAvatar(contact: c, size: 38),
+                      const SizedBox(width: Gap.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(c.name, style: t.titleSmall),
+                            Text(
+                              c.relation,
+                              style: t.bodySmall?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.done_all_rounded,
+                        size: 18,
+                        color: AppColors.success,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
         const SizedBox(height: Gap.xl),
         AppButton.danger(
           label: 'Appeler la police (17)',
@@ -587,9 +675,113 @@ class _SentView extends StatelessWidget {
         AppButton.secondary(
           label: 'Je suis en sécurité',
           icon: Icons.verified_user_rounded,
-          onPressed: onSafe,
+          loading: resolving,
+          onPressed: () => onResolve('resolved'),
+        ),
+        const SizedBox(height: Gap.xs),
+        Center(
+          child: TextButton(
+            onPressed: resolving ? null : () => onResolve('cancelled'),
+            child: const Text(
+              'C’était une fausse alerte',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
         ),
       ],
+    );
+  }
+}
+
+/// Envoi en cours : les nouveaux essais sont automatiques ; l'appel au 17
+/// reste accessible en parallèle.
+class _SendingView extends StatelessWidget {
+  const _SendingView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.all(Gap.page),
+      child: Column(
+        children: [
+          const Spacer(),
+          const SizedBox(
+            width: 72,
+            height: 72,
+            child: CircularProgressIndicator(
+              strokeWidth: 4,
+              color: AppColors.danger,
+            ),
+          ),
+          const SizedBox(height: Gap.xl),
+          Text('Envoi de l’alerte…', style: t.headlineSmall),
+          const SizedBox(height: Gap.xs),
+          ValueListenableBuilder(
+            valueListenable: SosRepository.instance.attempts,
+            builder: (context, n, _) => Text(
+              n <= 1
+                  ? 'Vos proches vont être prévenus.'
+                  : 'Réseau instable — nouvel essai automatique ($n).',
+              textAlign: TextAlign.center,
+              style: t.bodyMedium?.copyWith(color: AppColors.textSecondary),
+            ),
+          ),
+          const Spacer(),
+          AppButton.danger(
+            label: 'Appeler la police (17)',
+            icon: Icons.local_police_rounded,
+            onPressed: () => callNumber(context, '17'),
+          ),
+          const SizedBox(height: Gap.md),
+        ],
+      ),
+    );
+  }
+}
+
+class _FailedView extends StatelessWidget {
+  const _FailedView({super.key, required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.all(Gap.page),
+      child: Column(
+        children: [
+          const Spacer(),
+          const IconBadge(
+            icon: Icons.error_outline_rounded,
+            color: AppColors.danger,
+            size: 72,
+          ),
+          const SizedBox(height: Gap.xl),
+          Text('L’alerte n’a pas pu partir', style: t.headlineSmall),
+          const SizedBox(height: Gap.xs),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: t.bodyMedium?.copyWith(color: AppColors.textSecondary),
+          ),
+          const Spacer(),
+          AppButton.danger(
+            label: 'Appeler la police (17)',
+            icon: Icons.local_police_rounded,
+            onPressed: () => callNumber(context, '17'),
+          ),
+          const SizedBox(height: Gap.sm),
+          AppButton.secondary(
+            label: 'Réessayer',
+            icon: Icons.refresh_rounded,
+            onPressed: onRetry,
+          ),
+          const SizedBox(height: Gap.md),
+        ],
+      ),
     );
   }
 }

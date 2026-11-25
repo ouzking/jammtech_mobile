@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/utils/formatters.dart';
 import '../core/widgets/widgets.dart';
-import '../data/demo_data.dart';
+import '../data/backend.dart';
+import '../data/repositories/alerts_repository.dart';
 import '../data/models.dart';
 import '../routes.dart';
 import 'app_page.dart';
@@ -37,37 +38,57 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   _Filter _filter = _Filter.all;
 
-  void _toggleResolved(SecurityAlert a) {
+  final _repo = AlertsRepository.instance;
+
+  Future<void> _refresh() async {
+    try {
+      await _repo.refresh();
+    } on AppException catch (e) {
+      if (mounted) _error(e);
+    }
+  }
+
+  void _error(AppException e) => showAppSnack(
+    context,
+    e.message,
+    icon: Icons.error_outline_rounded,
+    color: AppColors.danger,
+  );
+
+  Future<void> _toggleResolved(SecurityAlert a) async {
     final resolved = !a.resolved;
-    DemoData.setResolved(a, resolved);
+    try {
+      await _repo.setResolved(a, resolved);
+    } on AppException catch (e) {
+      if (mounted) _error(e);
+      return;
+    }
+    if (!mounted) return;
     showAppSnack(
       context,
       resolved ? 'Alerte marquée comme traitée' : 'Alerte rouverte',
       action: SnackBarAction(
         label: 'Annuler',
-        onPressed: () => DemoData.setResolved(a, !resolved),
+        onPressed: () => _repo.setResolved(a, !resolved).ignore(),
       ),
     );
   }
 
-  void _resolveAll() {
-    final open = DemoData.alerts.where((a) => !a.resolved).toList();
-    if (open.isEmpty) return;
-    for (final a in open) {
-      a.resolved = true;
+  Future<void> _resolveAll() async {
+    final List<SecurityAlert> done;
+    try {
+      done = await _repo.resolveAll();
+    } on AppException catch (e) {
+      if (mounted) _error(e);
+      return;
     }
-    DemoData.alertsRevision.value++;
+    if (!mounted || done.isEmpty) return;
     showAppSnack(
       context,
-      '${open.length} alerte(s) marquée(s) comme traitée(s)',
+      '${done.length} alerte(s) marquée(s) comme traitée(s)',
       action: SnackBarAction(
         label: 'Annuler',
-        onPressed: () {
-          for (final a in open) {
-            a.resolved = false;
-          }
-          DemoData.alertsRevision.value++;
-        },
+        onPressed: () => _repo.reopen(done).ignore(),
       ),
     );
   }
@@ -75,10 +96,10 @@ class _AlertsScreenState extends State<AlertsScreen> {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
-      valueListenable: DemoData.alertsRevision,
-      builder: (context, _, _) {
-        final items = DemoData.alerts.where(_filter.matches).toList();
-        final open = DemoData.unresolvedCount;
+      valueListenable: _repo.alerts,
+      builder: (context, all, _) {
+        final items = all.where(_filter.matches).toList();
+        final open = all.where((a) => !a.resolved).length;
 
         return AppPage(
           title: 'Alertes',
@@ -86,6 +107,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
               ? 'Aucune alerte en attente'
               : '$open alerte${open > 1 ? 's' : ''} à traiter',
           standalone: widget.standalone,
+          onRefresh: _refresh,
           actions: [
             GlassIconButton(
               icon: Icons.done_all_rounded,
@@ -104,7 +126,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                   separatorBuilder: (_, _) => const SizedBox(width: Gap.xs),
                   itemBuilder: (_, i) {
                     final f = _Filter.values[i];
-                    final count = DemoData.alerts.where(f.matches).length;
+                    final count = all.where(f.matches).length;
                     return ChoiceChip(
                       label: Text('${f.label}  $count'),
                       selected: f == _filter,
@@ -421,7 +443,9 @@ Future<void> showAlertDetails(BuildContext context, SecurityAlert alert) {
                           ? Icons.replay_rounded
                           : Icons.check_rounded,
                       onPressed: () {
-                        DemoData.setResolved(alert, !alert.resolved);
+                        AlertsRepository.instance
+                            .setResolved(alert, !alert.resolved)
+                            .ignore();
                         Navigator.pop(sheetContext);
                       },
                     ),

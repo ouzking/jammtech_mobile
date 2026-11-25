@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../core/utils/validators.dart';
 import '../core/widgets/widgets.dart';
+import '../data/backend.dart';
+import '../data/repositories/auth_repository.dart';
 import '../routes.dart';
 import 'auth_layout.dart';
 
@@ -40,11 +42,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
     setState(() => _loading = true);
-    // TODO: brancher la création de compte réelle.
-    await Future<void>.delayed(const Duration(milliseconds: 1000));
-    if (!mounted) return;
-    showAppSnack(context, 'Compte créé. Vous pouvez vous connecter.');
-    Navigator.pushReplacementNamed(context, AppRoutes.login);
+    try {
+      await AuthRepository.instance.signUp(
+        fullName: _name.text,
+        phone: _phone.text,
+        password: _password.text,
+      );
+      if (!mounted) return;
+      // Le serveur refuse la connexion tant que le numéro n'est pas vérifié.
+      Navigator.pushReplacementNamed(
+        context,
+        AppRoutes.verifyPhone,
+        arguments: _phone.text,
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      HapticFeedback.heavyImpact();
+      showAppSnack(
+        context,
+        e.message,
+        icon: Icons.error_outline_rounded,
+        color: AppColors.danger,
+      );
+    }
   }
 
   @override
@@ -94,7 +115,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 icon: Icons.lock_outline_rounded,
                 password: true,
                 autofillHints: const [AutofillHints.newPassword],
-                validator: Validators.password,
+                validator: Validators.newPassword,
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: Gap.sm),

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/widgets.dart';
+import '../../data/repositories/account_repository.dart';
 import '../app_page.dart';
+import 'server_prefs.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -10,17 +12,30 @@ class NotificationsScreen extends StatefulWidget {
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
-  // TODO: synchroniser avec le service de notifications push.
-  bool _intrusions = true;
-  bool _zones = true;
-  bool _devices = true;
-  bool _family = true;
-  bool _sound = true;
-  bool _vibration = true;
-  bool _quietHours = false;
-  TimeOfDay _quietFrom = const TimeOfDay(hour: 22, minute: 0);
-  TimeOfDay _quietTo = const TimeOfDay(hour: 7, minute: 0);
+class _NotificationsScreenState extends State<NotificationsScreen>
+    with ServerPrefs<NotificationsScreen> {
+  @override
+  Future<Map<String, dynamic>> loadPrefs() =>
+      AccountRepository.instance.notificationPreferences();
+
+  @override
+  Future<void> savePrefs(Map<String, dynamic> values) =>
+      AccountRepository.instance.updateNotificationPreferences(values);
+
+  /// « 22:00:00 » → TimeOfDay (heure de Dakar, comme le serveur).
+  TimeOfDay _time(String key, TimeOfDay fallback) {
+    final parts = (prefs[key] as String? ?? '').split(':');
+    if (parts.length < 2) return fallback;
+    return TimeOfDay(
+      hour: int.tryParse(parts[0]) ?? fallback.hour,
+      minute: int.tryParse(parts[1]) ?? fallback.minute,
+    );
+  }
+
+  TimeOfDay get _quietFrom =>
+      _time('quiet_hours_start', const TimeOfDay(hour: 22, minute: 0));
+  TimeOfDay get _quietTo =>
+      _time('quiet_hours_end', const TimeOfDay(hour: 7, minute: 0));
 
   Future<void> _pickTime(bool from) async {
     final picked = await showTimePicker(
@@ -28,7 +43,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       initialTime: from ? _quietFrom : _quietTo,
     );
     if (picked == null) return;
-    setState(() => from ? _quietFrom = picked : _quietTo = picked);
+    final v =
+        '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+    await setPref(from ? 'quiet_hours_start' : 'quiet_hours_end', v);
   }
 
   @override
@@ -62,7 +79,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ],
                 ),
               ),
-              const GroupLabel('Types d’alertes'),
+              const GroupLabel('Notifications push'),
               SettingsGroup(
                 children: [
                   SwitchSettingsTile(
@@ -70,33 +87,51 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     color: AppColors.danger,
                     title: 'Intrusions',
                     subtitle: 'Mouvement détecté, porte forcée',
-                    value: _intrusions,
-                    onChanged: (v) => setState(() => _intrusions = v),
+                    value: flag('intrusions_push'),
+                    onChanged: (v) => setPref('intrusions_push', v),
                   ),
                   SwitchSettingsTile(
                     icon: Icons.warning_amber_rounded,
                     color: AppColors.warning,
                     title: 'Zones à risque',
                     subtitle: 'Incidents signalés à proximité',
-                    value: _zones,
-                    onChanged: (v) => setState(() => _zones = v),
+                    value: flag('zones_push'),
+                    onChanged: (v) => setPref('zones_push', v),
                   ),
                   SwitchSettingsTile(
                     icon: Icons.router_outlined,
                     color: AppColors.info,
                     title: 'État des appareils',
                     subtitle: 'Caméra hors ligne, batterie faible',
-                    value: _devices,
-                    onChanged: (v) => setState(() => _devices = v),
+                    value: flag('devices_push'),
+                    onChanged: (v) => setPref('devices_push', v),
                   ),
                   SwitchSettingsTile(
                     icon: Icons.family_restroom_rounded,
                     color: AppColors.violet,
                     title: 'Activité des proches',
                     subtitle: 'Arrivées, départs, partages',
-                    value: _family,
-                    onChanged: (v) => setState(() => _family = v),
+                    value: flag('contacts_push'),
+                    onChanged: (v) => setPref('contacts_push', v),
                   ),
+                ],
+              ),
+              const GroupLabel('SMS'),
+              SettingsGroup(
+                children: [
+                  for (final (key, title) in const [
+                    ('intrusions_sms', 'Intrusions'),
+                    ('zones_sms', 'Zones à risque'),
+                    ('devices_sms', 'État des appareils'),
+                    ('contacts_sms', 'Activité des proches'),
+                  ])
+                    SwitchSettingsTile(
+                      icon: Icons.sms_outlined,
+                      color: AppColors.info,
+                      title: title,
+                      value: flag(key),
+                      onChanged: (v) => setPref(key, v),
+                    ),
                 ],
               ),
               const GroupLabel('Sons & vibrations'),
@@ -105,14 +140,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   SwitchSettingsTile(
                     icon: Icons.volume_up_outlined,
                     title: 'Son',
-                    value: _sound,
-                    onChanged: (v) => setState(() => _sound = v),
+                    value: flag('sound'),
+                    onChanged: (v) => setPref('sound', v),
                   ),
                   SwitchSettingsTile(
                     icon: Icons.vibration_rounded,
                     title: 'Vibration',
-                    value: _vibration,
-                    onChanged: (v) => setState(() => _vibration = v),
+                    value: flag('vibration'),
+                    onChanged: (v) => setPref('vibration', v),
                   ),
                 ],
               ),
@@ -124,10 +159,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     color: AppColors.violet,
                     title: 'Heures calmes',
                     subtitle: 'Seules les alertes critiques sonnent',
-                    value: _quietHours,
-                    onChanged: (v) => setState(() => _quietHours = v),
+                    value: flag('quiet_hours_enabled'),
+                    onChanged: (v) => setPref('quiet_hours_enabled', v),
                   ),
-                  if (_quietHours) ...[
+                  if (flag('quiet_hours_enabled')) ...[
                     SettingsTile(
                       icon: Icons.nightlight_outlined,
                       color: AppColors.violet,

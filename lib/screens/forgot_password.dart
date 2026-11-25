@@ -5,7 +5,10 @@ import 'package:flutter/services.dart';
 
 import '../core/utils/validators.dart';
 import '../core/widgets/widgets.dart';
+import '../data/backend.dart';
+import '../data/repositories/auth_repository.dart';
 import '../routes.dart';
+import '../services/session.dart';
 import 'auth_layout.dart';
 import 'register.dart' show PasswordStrengthMeter;
 
@@ -52,9 +55,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
   }
 
-  Future<void> _fakeNetwork() =>
-      Future<void>.delayed(const Duration(milliseconds: 800));
-
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     if (_step == _Step.code && _otp.text.length < _codeLength) {
@@ -73,8 +73,29 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
 
     setState(() => _loading = true);
-    // TODO: brancher l'envoi / la vérification réels du code SMS.
-    await _fakeNetwork();
+    final auth = AuthRepository.instance;
+    try {
+      switch (_step) {
+        case _Step.phone:
+          await auth.sendResetCode(_phone.text);
+        case _Step.code:
+          await auth.verifyOtp(_phone.text, _otp.text);
+        case _Step.password:
+          await auth.updatePassword(_password.text);
+      }
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      if (_step == _Step.code) _otp.clear();
+      HapticFeedback.heavyImpact();
+      showAppSnack(
+        context,
+        e.message,
+        icon: Icons.error_outline_rounded,
+        color: AppColors.danger,
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() => _loading = false);
 
@@ -86,8 +107,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       case _Step.code:
         setState(() => _step = _Step.password);
       case _Step.password:
+        // Le code vérifié a ouvert une session : direction l'accueil.
         showAppSnack(context, 'Mot de passe mis à jour avec succès.');
-        Navigator.pushReplacementNamed(context, AppRoutes.login);
+        Session.onSignedIn().ignore();
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          AppRoutes.home,
+          (_) => false,
+        );
     }
   }
 
@@ -187,10 +214,26 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     ),
                   )
                 : TextButton(
-                    onPressed: () {
-                      _otp.clear();
-                      _startResendTimer();
-                      showAppSnack(context, 'Nouveau code envoyé.');
+                    onPressed: () async {
+                      try {
+                        await AuthRepository.instance.sendResetCode(
+                          _phone.text,
+                        );
+                        _otp.clear();
+                        _startResendTimer();
+                        if (mounted) {
+                          showAppSnack(context, 'Nouveau code envoyé.');
+                        }
+                      } on AppException catch (e) {
+                        if (mounted) {
+                          showAppSnack(
+                            context,
+                            e.message,
+                            icon: Icons.error_outline_rounded,
+                            color: AppColors.danger,
+                          );
+                        }
+                      }
                     },
                     child: const Text('Renvoyer le code'),
                   ),
@@ -204,7 +247,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               label: 'Nouveau mot de passe',
               icon: Icons.lock_outline_rounded,
               password: true,
-              validator: Validators.password,
+              validator: Validators.newPassword,
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: Gap.sm),

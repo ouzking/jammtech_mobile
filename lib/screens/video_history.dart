@@ -1,9 +1,13 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../core/utils/formatters.dart';
 import '../core/widgets/widgets.dart';
-import '../data/demo_data.dart';
+import '../data/backend.dart';
 import '../data/models.dart';
+import '../data/repositories/account_repository.dart';
+import '../data/repositories/recordings_repository.dart';
 import 'app_page.dart';
 
 class VideoHistoryScreen extends StatefulWidget {
@@ -14,9 +18,36 @@ class VideoHistoryScreen extends StatefulWidget {
 }
 
 class _VideoHistoryScreenState extends State<VideoHistoryScreen> {
-  // TODO: remplacer par le stockage distant (Firebase / API).
-  final _videos = List<VideoRecord>.of(DemoData.videos);
+  final _repo = RecordingsRepository.instance;
+  List<VideoRecord> _videos = const [];
+  bool _loading = true;
   bool _motionOnly = false;
+
+  String? get _homeId => AccountRepository.instance.dashboard.value?.homeId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final v = await _repo.list(_homeId);
+      if (mounted) setState(() => _videos = v);
+    } on AppException catch (e) {
+      if (mounted) _error(e.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _error(String m) => showAppSnack(
+    context,
+    m,
+    icon: Icons.error_outline_rounded,
+    color: AppColors.danger,
+  );
 
   Future<void> _delete(VideoRecord v) async {
     final ok = await confirmAction(
@@ -27,19 +58,55 @@ class _VideoHistoryScreenState extends State<VideoHistoryScreen> {
       destructive: true,
     );
     if (!ok || !mounted) return;
-    final index = _videos.indexOf(v);
-    setState(() => _videos.remove(v));
-    showAppSnack(
-      context,
-      'Vidéo supprimée',
-      icon: Icons.delete_outline_rounded,
-      color: AppColors.textSecondary,
-      action: SnackBarAction(
-        label: 'Annuler',
-        onPressed: () {
-          if (mounted) setState(() => _videos.insert(index, v));
-        },
-      ),
+    final before = _videos;
+    setState(() => _videos = [..._videos]..remove(v));
+    try {
+      await _repo.delete(v);
+      if (mounted) {
+        showAppSnack(
+          context,
+          'Vidéo supprimée',
+          icon: Icons.delete_outline_rounded,
+          color: AppColors.textSecondary,
+        );
+      }
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _videos = before);
+      _error(e.message);
+    }
+  }
+
+  /// Respecte le réglage « vidéos en Wi-Fi uniquement ».
+  Future<bool> _allowedToStream() async {
+    try {
+      final settings = await AccountRepository.instance.settings();
+      if (settings['videos_wifi_only'] != true) return true;
+      final c = await Connectivity().checkConnectivity();
+      if (c.contains(ConnectivityResult.wifi) ||
+          c.contains(ConnectivityResult.ethernet)) {
+        return true;
+      }
+      if (!mounted) return false;
+      return confirmAction(
+        context,
+        title: 'Lecture sur données mobiles ?',
+        message:
+            'Vous avez choisi « vidéos en Wi-Fi uniquement ». '
+            'Lire quand même cette vidéo avec votre forfait ?',
+        confirmLabel: 'Lire',
+      );
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _play(VideoRecord v) async {
+    if (!await _allowedToStream() || !mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PlayerSheet(video: v),
     );
   }
 
@@ -57,8 +124,11 @@ class _VideoHistoryScreenState extends State<VideoHistoryScreen> {
 
     return AppPage(
       title: 'Enregistrements',
-      subtitle: '${_videos.length} vidéo${_videos.length > 1 ? 's' : ''}',
+      subtitle: _loading
+          ? 'Chargement…'
+          : '${_videos.length} vidéo${_videos.length > 1 ? 's' : ''} · conservées 30 jours',
       glow: AppColors.violet,
+      onRefresh: _load,
       slivers: [
         PageSection(
           bottom: Gap.md,
@@ -79,7 +149,12 @@ class _VideoHistoryScreenState extends State<VideoHistoryScreen> {
             ],
           ),
         ),
-        if (items.isEmpty)
+        if (_loading)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (items.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
             child: EmptyState(
@@ -100,7 +175,7 @@ class _VideoHistoryScreenState extends State<VideoHistoryScreen> {
                   final v = entry.value[i];
                   return _VideoCard(
                     video: v,
-                    onPlay: () => _showPlayer(context, v),
+                    onPlay: () => _play(v),
                     onDelete: () => _delete(v),
                   );
                 },
@@ -110,38 +185,116 @@ class _VideoHistoryScreenState extends State<VideoHistoryScreen> {
       ],
     );
   }
+}
 
-  void _showPlayer(BuildContext context, VideoRecord v) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        final t = Theme.of(context).textTheme;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(Gap.page, 0, Gap.page, Gap.md),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Thumbnail(video: v, large: true),
-                const SizedBox(height: Gap.lg),
-                Text(v.title, style: t.titleLarge),
-                const SizedBox(height: 4),
-                Text(
-                  '${v.camera} · ${dayLabel(v.time)} à ${clock(v.time)} · ${duration(v.duration)}',
-                  style: t.bodyMedium?.copyWith(color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: Gap.lg),
-                Text(
-                  'La lecture sera disponible une fois le stockage vidéo connecté.',
-                  style: t.bodySmall?.copyWith(color: AppColors.textTertiary),
-                ),
-              ],
+/// Lecteur : URL signée valable 5 minutes, demandée à l'ouverture.
+class _PlayerSheet extends StatefulWidget {
+  const _PlayerSheet({required this.video});
+
+  final VideoRecord video;
+
+  @override
+  State<_PlayerSheet> createState() => _PlayerSheetState();
+}
+
+class _PlayerSheetState extends State<_PlayerSheet> {
+  VideoPlayerController? _player;
+  String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _open();
+  }
+
+  Future<void> _open() async {
+    try {
+      final url = await RecordingsRepository.instance.signedUrl(
+        widget.video.storagePath,
+      );
+      if (url == null) {
+        setState(() => _message = 'Vidéo de démonstration : aucun fichier.');
+        return;
+      }
+      final p = VideoPlayerController.networkUrl(Uri.parse(url));
+      await p.initialize();
+      if (!mounted) return p.dispose();
+      setState(() => _player = p);
+      p.play();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = toAppException(e).message);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _player?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final v = widget.video;
+    final p = _player;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(Gap.page, 0, Gap.page, Gap.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: Radii.lgAll,
+              child: p != null
+                  ? AspectRatio(
+                      aspectRatio: p.value.aspectRatio,
+                      child: GestureDetector(
+                        onTap: () => setState(
+                          () => p.value.isPlaying ? p.pause() : p.play(),
+                        ),
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            VideoPlayer(p),
+                            VideoProgressIndicator(
+                              p,
+                              allowScrubbing: true,
+                              colors: const VideoProgressColors(
+                                playedColor: AppColors.brand,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        _Thumbnail(video: v, large: true),
+                        if (_message == null) const CircularProgressIndicator(),
+                      ],
+                    ),
             ),
-          ),
-        );
-      },
+            const SizedBox(height: Gap.lg),
+            Text(v.title, style: t.titleLarge),
+            const SizedBox(height: 4),
+            Text(
+              '${v.camera} · ${dayLabel(v.time)} à ${clock(v.time)} · ${duration(v.duration)}',
+              style: t.bodyMedium?.copyWith(color: AppColors.textSecondary),
+            ),
+            if (_message != null) ...[
+              const SizedBox(height: Gap.md),
+              Text(
+                _message!,
+                style: t.bodySmall?.copyWith(color: AppColors.textTertiary),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

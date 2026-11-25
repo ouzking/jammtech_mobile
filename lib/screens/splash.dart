@@ -3,7 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/widgets/widgets.dart';
+import '../data/backend.dart';
 import '../routes.dart';
+import '../services/local_security.dart';
+import '../services/session.dart';
+import 'app_lock.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -44,9 +48,27 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _timer = Timer(const Duration(milliseconds: 2600), () {
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, AppRoutes.onboarding);
+      if (!mounted) return;
+      // Session déjà ouverte : directement à l'accueil.
+      final signedIn = Backend.enabled && Backend.isSignedIn;
+      if (signedIn) Session.onSignedIn().ignore();
+      if (signedIn && LocalSecurity.instance.pinEnabled) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute<void>(
+            builder: (context) => AppLockScreen(
+              onUnlocked: () =>
+                  Navigator.pushReplacementNamed(context, AppRoutes.home),
+              onSos: () => Navigator.pushNamed(context, AppRoutes.sos),
+            ),
+          ),
+        );
+        return;
       }
+      Navigator.pushReplacementNamed(
+        context,
+        signedIn ? AppRoutes.home : AppRoutes.onboarding,
+      );
     });
   }
 

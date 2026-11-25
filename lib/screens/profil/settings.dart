@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/widgets.dart';
+import '../../data/backend.dart';
+import '../../data/repositories/account_repository.dart';
 import '../app_page.dart';
+import 'server_prefs.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -10,17 +13,25 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
-  // TODO: persister ces préférences (shared_preferences / backend).
-  bool _preciseLocation = true;
-  bool _backgroundLocation = true;
-  bool _autoShareOnSos = true;
-  bool _wifiOnlyUploads = false;
-  bool _analytics = true;
-  String _language = 'Français';
+class _SettingsScreenState extends State<SettingsScreen>
+    with ServerPrefs<SettingsScreen> {
+  static const _languages = {'fr': 'Français', 'wo': 'Wolof', 'en': 'English'};
+
+  late String _language =
+      _languages[AccountRepository.instance.dashboard.value?.language ??
+          'fr'] ??
+      'Français';
+
+  @override
+  Future<Map<String, dynamic>> loadPrefs() =>
+      AccountRepository.instance.settings();
+
+  @override
+  Future<void> savePrefs(Map<String, dynamic> values) =>
+      AccountRepository.instance.updateSettings(values);
 
   Future<void> _chooseLanguage() async {
-    const languages = ['Français', 'Wolof', 'English'];
+    final languages = _languages.values;
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
@@ -46,7 +57,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
-    if (choice != null) setState(() => _language = choice);
+    if (choice == null || choice == _language) return;
+    final previous = _language;
+    setState(() => _language = choice);
+    try {
+      final code = _languages.entries.firstWhere((e) => e.value == choice).key;
+      await AccountRepository.instance.setLanguage(code);
+      AccountRepository.instance.refreshDashboard().ignore();
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _language = previous);
+      showAppSnack(
+        context,
+        e.message,
+        icon: Icons.error_outline_rounded,
+        color: AppColors.danger,
+      );
+    }
   }
 
   Future<void> _clearCache() async {
@@ -95,24 +122,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppColors.success,
                     title: 'Position précise',
                     subtitle: 'Utilise le GPS haute précision',
-                    value: _preciseLocation,
-                    onChanged: (v) => setState(() => _preciseLocation = v),
+                    value: flag('precise_location'),
+                    onChanged: (v) => setPref('precise_location', v),
                   ),
                   SwitchSettingsTile(
                     icon: Icons.share_location_rounded,
                     color: AppColors.success,
                     title: 'Localisation en arrière-plan',
                     subtitle: 'Nécessaire pour le suivi continu',
-                    value: _backgroundLocation,
-                    onChanged: (v) => setState(() => _backgroundLocation = v),
+                    value: flag('background_location'),
+                    onChanged: (v) => setPref('background_location', v),
                   ),
                   SwitchSettingsTile(
                     icon: Icons.sos_rounded,
                     color: AppColors.danger,
                     title: 'Partage automatique en SOS',
                     subtitle: 'Envoie votre position à vos proches',
-                    value: _autoShareOnSos,
-                    onChanged: (v) => setState(() => _autoShareOnSos = v),
+                    value: flag('auto_share_on_sos'),
+                    onChanged: (v) => setPref('auto_share_on_sos', v),
                   ),
                 ],
               ),
@@ -124,16 +151,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppColors.info,
                     title: 'Vidéos en Wi-Fi uniquement',
                     subtitle: 'Économise votre forfait mobile',
-                    value: _wifiOnlyUploads,
-                    onChanged: (v) => setState(() => _wifiOnlyUploads = v),
+                    value: flag('videos_wifi_only'),
+                    onChanged: (v) => setPref('videos_wifi_only', v),
                   ),
                   SwitchSettingsTile(
                     icon: Icons.insights_rounded,
                     color: AppColors.info,
                     title: 'Statistiques anonymes',
                     subtitle: 'Aide à améliorer JammTech',
-                    value: _analytics,
-                    onChanged: (v) => setState(() => _analytics = v),
+                    value: flag('anonymous_stats'),
+                    onChanged: (v) => setPref('anonymous_stats', v),
                   ),
                   SettingsTile(
                     icon: Icons.cleaning_services_outlined,

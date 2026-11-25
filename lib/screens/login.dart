@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 
 import '../core/utils/validators.dart';
 import '../core/widgets/widgets.dart';
+import '../data/backend.dart';
+import '../data/repositories/auth_repository.dart';
 import '../routes.dart';
+import '../services/session.dart';
 import 'auth_layout.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -33,10 +36,31 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     setState(() => _loading = true);
-    // TODO: brancher l'authentification réelle.
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (!mounted) return;
-    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (_) => false);
+    try {
+      await AuthRepository.instance.signIn(_phone.text, _password.text);
+      Session.onSignedIn().ignore();
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (_) => false);
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      HapticFeedback.heavyImpact();
+      // Numéro non vérifié : on renvoie un code et on ouvre la vérification.
+      if (e.code == 'phone_not_confirmed') {
+        AuthRepository.instance.resendSignupOtp(_phone.text).ignore();
+        Navigator.pushNamed(
+          context,
+          AppRoutes.verifyPhone,
+          arguments: _phone.text,
+        );
+      }
+      showAppSnack(
+        context,
+        e.message,
+        icon: Icons.error_outline_rounded,
+        color: AppColors.danger,
+      );
+    }
   }
 
   @override

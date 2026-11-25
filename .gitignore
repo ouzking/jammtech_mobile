@@ -46,3 +46,6 @@ app.*.map.json
 
 # Sauvegardes locales
 .backup/
+
+# Configuration par environnement (voir env/*.example)
+env/*.json

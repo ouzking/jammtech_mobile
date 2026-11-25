@@ -32,6 +32,15 @@
 	<array>
 		<string>tel</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>remote-notification</string>
+	</array>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Pendant une alerte SOS, JammTech continue de transmettre votre position à vos proches, même écran éteint.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>JammTech utilise Face ID pour déverrouiller l’application.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

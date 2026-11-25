@@ -16,6 +16,7 @@ class AppPage extends StatelessWidget {
     this.standalone = true,
     this.glow = AppColors.brand,
     this.bottomPadding,
+    this.onRefresh,
   });
 
   final String title;
@@ -25,6 +26,9 @@ class AppPage extends StatelessWidget {
   final bool standalone;
   final Color glow;
   final double? bottomPadding;
+
+  /// Tirer pour actualiser (désactivé si `null`).
+  final Future<void> Function()? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -40,67 +44,80 @@ class AppPage extends StatelessWidget {
         glow: glow,
         child: SafeArea(
           bottom: false,
-          child: CustomScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(
-                  Gap.page,
-                  Gap.sm,
-                  Gap.page,
-                  Gap.lg,
-                ),
-                sliver: SliverToBoxAdapter(
-                  child: Row(
-                    children: [
-                      if (standalone) ...[
-                        GlassIconButton(
-                          icon: Icons.arrow_back_rounded,
-                          tooltip: 'Retour',
-                          onPressed: () => Navigator.maybePop(context),
-                        ),
-                        const SizedBox(width: Gap.md),
-                      ],
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: standalone
-                                  ? t.headlineSmall
-                                  : t.headlineMedium,
-                            ),
-                            if (subtitle != null) ...[
-                              const SizedBox(height: 2),
+          child: _refreshable(
+            CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(
+                    Gap.page,
+                    Gap.sm,
+                    Gap.page,
+                    Gap.lg,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      children: [
+                        if (standalone) ...[
+                          GlassIconButton(
+                            icon: Icons.arrow_back_rounded,
+                            tooltip: 'Retour',
+                            onPressed: () => Navigator.maybePop(context),
+                          ),
+                          const SizedBox(width: Gap.md),
+                        ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                subtitle!,
-                                style: t.bodyMedium?.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
+                                title,
+                                style: standalone
+                                    ? t.headlineSmall
+                                    : t.headlineMedium,
                               ),
+                              if (subtitle != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle!,
+                                  style: t.bodyMedium?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                      for (final a in actions) ...[
-                        const SizedBox(width: Gap.xs),
-                        a,
+                        for (final a in actions) ...[
+                          const SizedBox(width: Gap.xs),
+                          a,
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              ...slivers,
-              SliverToBoxAdapter(child: SizedBox(height: bottom)),
-            ],
+                ...slivers,
+                SliverToBoxAdapter(child: SizedBox(height: bottom)),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+extension on AppPage {
+  Widget _refreshable(Widget child) => onRefresh == null
+      ? child
+      : RefreshIndicator(
+          onRefresh: onRefresh!,
+          color: AppColors.brandBright,
+          backgroundColor: AppColors.surfaceHigh,
+          child: child,
+        );
 }
 
 /// Raccourci : padding horizontal standard autour d'un sliver.

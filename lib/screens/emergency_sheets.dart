@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/utils/formatters.dart';
 import '../core/widgets/widgets.dart';
 import '../data/demo_data.dart';
+import '../data/repositories/contacts_repository.dart';
 import '../data/models.dart';
 
 /// Feuille « Numéros d'urgence » : un appui lance l'appel.
@@ -35,7 +36,7 @@ Future<void> showTrustedContactsSheet(BuildContext context) {
       title: 'Contacts de confiance',
       subtitle: 'Prévenus automatiquement lors d’une alerte SOS.',
       children: [
-        for (final c in DemoData.contacts)
+        for (final c in ContactsRepository.instance.contacts.value)
           _CallRow(
             leading: ContactAvatar(contact: c),
             title: c.name,

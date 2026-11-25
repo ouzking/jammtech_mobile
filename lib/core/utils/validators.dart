@@ -19,6 +19,16 @@ abstract final class Validators {
     return null;
   }
 
+  /// Nouveau mot de passe : règle du serveur (8 caractères, lettres + chiffres).
+  static String? newPassword(String? v) {
+    final base = password(v);
+    if (base != null) return base;
+    if (!RegExp(r'[A-Za-z]').hasMatch(v!) || !RegExp(r'\d').hasMatch(v)) {
+      return 'Utilisez des lettres et des chiffres';
+    }
+    return null;
+  }
+
   static String? name(String? v) {
     if (v == null || v.trim().isEmpty) return 'Le nom est obligatoire';
     if (v.trim().length < 3) return 'Nom trop court';

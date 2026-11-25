@@ -3,25 +3,53 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import 'models.dart';
 
-/// Données de démonstration — à remplacer par l'API / Firebase.
-///
-/// Tout est regroupé ici pour que le branchement d'un vrai backend
-/// ne touche aucun écran.
+/// Données de démonstration, utilisées quand aucun backend n'est configuré
+/// (développement de l'interface, tests). En production, les dépôts de
+/// `lib/data/repositories/` lisent Supabase.
 abstract final class DemoData {
   static const userName = 'Moussa Ndiaye';
-  static const userPhone = '+221 77 123 45 67';
+  static const userPhone = '+221771234567';
 
   static final _now = DateTime.now();
 
-  /// Incrémenté à chaque modification des alertes, pour rafraîchir les badges.
-  static final alertsRevision = ValueNotifier<int>(0);
+  static Dashboard dashboard() => Dashboard(
+    userId: 'demo',
+    fullName: userName,
+    phone: userPhone,
+    armMode: ArmMode.away,
+    camerasOnline: 4,
+    camerasTotal: 4,
+    devicesCount: 4,
+    contactsCount: contacts.length,
+    alertsTotal: alerts.length,
+    alertsUnresolved: alerts.where((a) => !a.resolved).length,
+    recentAlerts: alerts.take(3).toList(),
+    protectionActive: true,
+  );
 
-  static int get unresolvedCount => alerts.where((a) => !a.resolved).length;
+  static const settings = <String, dynamic>{
+    'precise_location': true,
+    'background_location': false,
+    'auto_share_on_sos': true,
+    'videos_wifi_only': true,
+    'anonymous_stats': false,
+  };
 
-  static void setResolved(SecurityAlert alert, bool resolved) {
-    alert.resolved = resolved;
-    alertsRevision.value++;
-  }
+  static const notificationPreferences = <String, dynamic>{
+    'intrusions_push': true,
+    'intrusions_sms': true,
+    'zones_push': true,
+    'zones_sms': false,
+    'devices_push': true,
+    'devices_sms': false,
+    'contacts_push': true,
+    'contacts_sms': false,
+    'sound': true,
+    'vibration': true,
+    'quiet_hours_enabled': false,
+    'quiet_hours_start': '22:00:00',
+    'quiet_hours_end': '07:00:00',
+  };
 
   static final alerts = <SecurityAlert>[
     SecurityAlert(

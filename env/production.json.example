@@ -1,0 +1,5 @@
+{
+  "SUPABASE_URL": "https://pbaxnjannheurgyxhlkt.supabase.co",
+  "SUPABASE_ANON_KEY": "<clé publishable/anon du projet — jamais la clé service_role>",
+  "APP_ENV": "production"
+}
