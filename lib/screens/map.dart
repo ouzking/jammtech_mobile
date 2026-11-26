@@ -212,7 +212,7 @@ class _MapScreenState extends State<MapScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [AppColors.background, Color(0x00060A14)],
+                    colors: [AppColors.background, Color(0x000A0F1E)],
                   ),
                 ),
               ),

@@ -79,12 +79,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 padding: const EdgeInsets.fromLTRB(Gap.page, Gap.xs, Gap.xs, 0),
                 child: Row(
                   children: [
-                    const BrandMark(size: 32),
-                    const SizedBox(width: Gap.sm),
-                    Text(
-                      'JammTech',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                    const JammLogo(height: 30),
                     const Spacer(),
                     AnimatedOpacity(
                       opacity: _isLast ? 0 : 1,

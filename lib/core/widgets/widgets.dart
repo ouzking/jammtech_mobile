@@ -4,5 +4,6 @@ export 'app_background.dart';
 export 'app_button.dart';
 export 'app_card.dart';
 export 'app_text_field.dart';
+export 'brand_logo.dart';
 export 'common.dart';
 export 'pressable.dart';

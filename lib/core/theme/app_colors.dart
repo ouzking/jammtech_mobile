@@ -3,17 +3,20 @@ import 'package:flutter/material.dart';
 /// Palette JammTech — une seule source de vérité pour toutes les couleurs.
 abstract final class AppColors {
   // Fonds
-  static const background = Color(0xFF060A14);
-  static const backgroundElevated = Color(0xFF0A1122);
+  static const background = Color(0xFF0A0F1E); // fond du logo
+  static const backgroundElevated = Color(0xFF0E1528);
   static const surface = Color(0xFF0F1729);
   static const surfaceHigh = Color(0xFF162036);
   static const surfaceHighest = Color(0xFF1E2A44);
 
   // Marque
-  static const brand = Color(0xFF4F7DFF);
-  static const brandBright = Color(0xFF7CA0FF);
-  static const brandDeep = Color(0xFF2A4BD7);
+  static const brand = Color(0xFF1E5BFF); // bleu du bouclier
+  static const brandBright = Color(0xFF7FA3FF); // « TECH »
+  static const brandDeep = Color(0xFF1443D6);
   static const navy = Color(0xFF0A1F44);
+
+  /// Barre secondaire du logo.
+  static const brandMist = Color(0xFFBCCEFF);
 
   // Sémantique
   static const danger = Color(0xFFFF3B5C);

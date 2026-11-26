@@ -3,66 +3,18 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import 'app_card.dart';
+import 'brand_logo.dart';
 import 'pressable.dart';
 
-/// Logo JammTech : bouclier dans un carré dégradé.
+/// Emblème JammTech (voir [JammLogoMark]) ; [size] = hauteur de l'emblème.
 class BrandMark extends StatelessWidget {
   const BrandMark({super.key, this.size = 72});
 
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        gradient: AppColors.brandGradient,
-        borderRadius: BorderRadius.circular(size * 0.3),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.brand.withValues(alpha: 0.5),
-            blurRadius: size * 0.6,
-            offset: Offset(0, size * 0.18),
-            spreadRadius: -size * 0.12,
-          ),
-        ],
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Reflet supérieur
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: size * 0.5,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(size * 0.3),
-                ),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.22),
-                    Colors.white.withValues(alpha: 0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Icon(Icons.shield_rounded, size: size * 0.52, color: Colors.white),
-          Icon(
-            Icons.check_rounded,
-            size: size * 0.26,
-            color: AppColors.brandDeep,
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      JammLogoMark(size: size / JammLogoMark.aspect, glow: size >= 48);
 }
 
 /// Titre de section avec action optionnelle à droite.

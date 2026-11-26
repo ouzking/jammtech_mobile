@@ -92,7 +92,7 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _logoFade,
                 child: ScaleTransition(
                   scale: _logoScale,
-                  child: const BrandMark(size: 104),
+                  child: const BrandMark(size: 132),
                 ),
               ),
               const SizedBox(height: Gap.xl),
@@ -103,18 +103,7 @@ class _SplashScreenState extends State<SplashScreen>
                     begin: const Offset(0, 0.3),
                     end: Offset.zero,
                   ).animate(_textFade),
-                  child: Column(
-                    children: [
-                      Text('JammTech', style: t.displaySmall),
-                      const SizedBox(height: Gap.xs),
-                      Text(
-                        'La paix dans votre poche',
-                        style: t.bodyLarge?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: const JammWordmark(fontSize: 40),
                 ),
               ),
               const Spacer(flex: 3),
@@ -134,8 +123,8 @@ class _SplashScreenState extends State<SplashScreen>
               ),
               const SizedBox(height: Gap.md),
               Text(
-                'SÉCURITÉ PERSONNELLE · MAISON CONNECTÉE',
-                style: t.labelSmall?.copyWith(color: AppColors.textTertiary),
+                'La paix dans votre poche',
+                style: t.bodySmall?.copyWith(color: AppColors.textTertiary),
               ),
               const SizedBox(height: Gap.xl),
             ],
