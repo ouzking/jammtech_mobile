@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Écran de lancement : fond du logo + emblème JammTech -->
+<!-- Ã‰cran de lancement : fond du logo + emblÃ¨me JammTech -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/splash_background" />
     <item>
