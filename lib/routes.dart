@@ -25,6 +25,10 @@ abstract final class AppRoutes {
   static const contacts = '/contacts';
   static const protectedPeople = '/protected_people';
   static const liveTracking = '/live_tracking';
+  static const transport = '/transport';
+  static const startTrip = '/start_trip';
+  static const tripCheckin = '/trip_checkin';
+  static const watchTrip = '/watch_trip';
 }
 
 final Map<String, WidgetBuilder> appRoutes = {
@@ -49,6 +53,8 @@ final Map<String, WidgetBuilder> appRoutes = {
   AppRoutes.help: (_) => const HelpScreen(),
   AppRoutes.contacts: (_) => const ContactsScreen(),
   AppRoutes.protectedPeople: (_) => const ProtectedPeopleScreen(),
+  AppRoutes.transport: (_) => const TransportScreen(standalone: true),
+  AppRoutes.startTrip: (_) => const StartTripScreen(),
 };
 
 /// Routes qui reçoivent des arguments.
@@ -58,6 +64,17 @@ Route<dynamic>? onGenerateRoute(RouteSettings s) {
       return MaterialPageRoute(
         settings: s,
         builder: (_) => VerifyPhoneScreen(phone: s.arguments as String),
+      );
+    case AppRoutes.tripCheckin:
+      return MaterialPageRoute(
+        settings: s,
+        fullscreenDialog: true,
+        builder: (_) => TripCheckinScreen(round: (s.arguments as int?) ?? 1),
+      );
+    case AppRoutes.watchTrip:
+      return MaterialPageRoute(
+        settings: s,
+        builder: (_) => WatchTripScreen(tripId: s.arguments as String),
       );
     case AppRoutes.liveTracking:
       return MaterialPageRoute(

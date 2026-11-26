@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../data/backend.dart';
 import '../data/repositories/account_repository.dart';
+import '../data/repositories/transport_repository.dart';
 import '../routes.dart';
 import 'app_navigator.dart';
 import 'inbox_service.dart';
@@ -144,7 +145,8 @@ class PushService {
       case 'sos':
       case 'sos_silent':
       case 'sos_closed':
-        // Le suivi en direct s'ouvre / se ferme immédiatement.
+      case 'trip_checkin':
+        // Le suivi en direct / la question s'ouvrent immédiatement.
         _route(data);
         return;
     }
@@ -194,6 +196,24 @@ class PushService {
         );
       case 'alert':
         appNavigator?.pushNamed(AppRoutes.alerts);
+      case 'trip_checkin':
+        // Écran plein « Tout va bien ? » (tour 1 ou 2).
+        TransportRepository.instance.refresh().whenComplete(() {
+          appNavigator?.pushNamed(
+            AppRoutes.tripCheckin,
+            arguments: int.tryParse('${data['round'] ?? 1}') ?? 1,
+          );
+        }).ignore();
+      case 'trip_started':
+      case 'trip_late':
+      case 'trip_battery_low':
+        final id = data['trip_id'] as String?;
+        if (id != null) {
+          appNavigator?.pushNamed(AppRoutes.watchTrip, arguments: id);
+        }
+      case 'trip_arrived':
+      case 'trip_cancelled':
+        TransportRepository.instance.refresh().ignore();
     }
   }
 }

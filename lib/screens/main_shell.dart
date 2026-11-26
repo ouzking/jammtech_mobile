@@ -5,11 +5,11 @@ import '../core/widgets/widgets.dart';
 import '../data/repositories/alerts_repository.dart';
 import 'alerts.dart';
 import 'home.dart';
-import 'map.dart';
+import 'transport/transport_screen.dart';
 import 'profile.dart';
 import 'smart_home.dart';
 
-enum AppTab { home, map, alerts, smartHome, profile }
+enum AppTab { home, transport, alerts, smartHome, profile }
 
 /// Coquille principale : navigation par onglets, état de chaque onglet conservé.
 class MainShell extends StatefulWidget {
@@ -43,7 +43,7 @@ class MainShellState extends State<MainShell> {
 
   Widget _build(AppTab tab) => switch (tab) {
     AppTab.home => const HomeScreen(),
-    AppTab.map => const MapScreen(),
+    AppTab.transport => const TransportScreen(),
     AppTab.alerts => const AlertsScreen(),
     AppTab.smartHome => const SmartHomeScreen(),
     AppTab.profile => const ProfileScreen(),
@@ -92,9 +92,9 @@ class MainShellState extends State<MainShell> {
                 label: 'Accueil',
               ),
               const NavigationDestination(
-                icon: Icon(Icons.map_outlined),
-                selectedIcon: Icon(Icons.map_rounded),
-                label: 'Carte',
+                icon: Icon(Icons.route_outlined),
+                selectedIcon: Icon(Icons.route_rounded),
+                label: 'Trajets',
               ),
               NavigationDestination(
                 icon: Badge(

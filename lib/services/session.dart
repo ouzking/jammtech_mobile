@@ -6,6 +6,7 @@ import '../data/repositories/alerts_repository.dart';
 import '../data/repositories/auth_repository.dart';
 import '../data/repositories/contacts_repository.dart';
 import '../data/repositories/home_repository.dart';
+import '../data/repositories/transport_repository.dart';
 import 'inbox_service.dart';
 import 'location_service.dart';
 import 'push_service.dart';
@@ -30,6 +31,7 @@ abstract final class Session {
         ContactsRepository.instance.refresh(),
         HomeRepository.instance.refreshDevices(d.homeId),
         ContactsRepository.instance.refreshProtected(activeSos: d.protectedSos),
+        TransportRepository.instance.refresh(),
       ]);
     } catch (e) {
       if (kDebugMode) debugPrint('refreshAll : $e');
@@ -48,6 +50,7 @@ abstract final class Session {
       AlertsRepository.instance.clear();
       ContactsRepository.instance.clear();
       HomeRepository.instance.clear();
+      TransportRepository.instance.clear();
     }
   }
 }

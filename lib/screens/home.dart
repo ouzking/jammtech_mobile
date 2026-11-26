@@ -5,6 +5,7 @@ import '../core/widgets/widgets.dart';
 import '../data/models.dart';
 import '../data/repositories/account_repository.dart';
 import '../data/repositories/alerts_repository.dart';
+import '../data/repositories/transport_repository.dart';
 import '../routes.dart';
 import '../services/inbox_service.dart';
 import '../services/session.dart';
@@ -134,6 +135,22 @@ class HomeScreen extends StatelessWidget {
                 _SosCard(
                   onTap: () => Navigator.pushNamed(context, AppRoutes.sos),
                 ),
+                const SizedBox(height: Gap.md),
+
+                // Transport
+                ValueListenableBuilder(
+                  valueListenable: TransportRepository.instance.summary,
+                  builder: (context, s, _) => _TripCard(
+                    trip: s?.activeTrip,
+                    onTap: () => s?.activeTrip == null
+                        ? Navigator.pushNamed(context, AppRoutes.startTrip)
+                        : _goTab(
+                            context,
+                            AppTab.transport,
+                            AppRoutes.transport,
+                          ),
+                  ),
+                ),
                 const SizedBox(height: Gap.xl),
 
                 // Actions rapides
@@ -153,7 +170,7 @@ class HomeScreen extends StatelessWidget {
                       subtitle: d?.locationSharing == true
                           ? 'Partage actif'
                           : 'Partage en direct',
-                      onTap: () => _goTab(context, AppTab.map, AppRoutes.map),
+                      onTap: () => Navigator.pushNamed(context, AppRoutes.map),
                     ),
                     _QuickAction(
                       icon: Icons.call_rounded,
@@ -640,6 +657,89 @@ class _QuickAction extends StatelessWidget {
                 style: t.bodySmall?.copyWith(color: AppColors.textSecondary),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TripCard extends StatelessWidget {
+  const _TripCard({required this.trip, required this.onTap});
+
+  final Trip? trip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final tr = trip;
+    final late = tr != null && tr.remaining.isNegative;
+    final color = tr == null
+        ? AppColors.brandBright
+        : tr.checkinPending
+        ? AppColors.danger
+        : late
+        ? AppColors.warning
+        : AppColors.success;
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(Gap.md),
+      radius: Radii.xlAll,
+      borderColor: color.withValues(alpha: 0.3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52,
+            height: 52,
+            child: tr == null
+                ? IconBadge(icon: Icons.route_rounded, color: color, size: 52)
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CircularProgressIndicator(
+                        value: tr.progress,
+                        strokeWidth: 4,
+                        strokeCap: StrokeCap.round,
+                        color: color,
+                        backgroundColor: AppColors.surfaceHighest,
+                      ),
+                      Icon(tr.mode.icon, color: color, size: 22),
+                    ],
+                  ),
+          ),
+          const SizedBox(width: Gap.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr == null ? 'Trajet sécurisé' : tr.destinationLabel,
+                  style: t.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  tr == null
+                      ? 'Taxi, moto, BRT : vos proches vous suivent'
+                      : tr.checkinPending
+                      ? 'Tout va bien ? Touchez pour répondre'
+                      : late
+                      ? 'En retard · prévu à ${clock(tr.expectedArrival)}'
+                      : 'Arrivée prévue à ${clock(tr.expectedArrival)}',
+                  style: t.bodySmall?.copyWith(
+                    color: tr?.checkinPending == true
+                        ? AppColors.danger
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            tr == null ? Icons.add_rounded : Icons.chevron_right_rounded,
+            color: AppColors.textTertiary,
           ),
         ],
       ),

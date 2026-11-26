@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/backend.dart';
+import '../data/repositories/transport_repository.dart';
 import '../routes.dart';
 import 'app_navigator.dart';
 
@@ -46,6 +47,16 @@ class InboxService {
           .onBroadcast(
             event: 'sos_started',
             callback: (m) => _onSosStarted(broadcastBody(m)),
+          )
+          .onBroadcast(
+            event: 'trip_started',
+            callback: (m) {
+              final id = broadcastBody(m)['trip_id'] as String?;
+              TransportRepository.instance.refresh().ignore();
+              if (id != null) {
+                appNavigator?.pushNamed(AppRoutes.watchTrip, arguments: id);
+              }
+            },
           )
           .onBroadcast(
             event: 'sos_closed',

@@ -357,3 +357,169 @@ class Dashboard {
     return '+221 ${l.substring(0, 2)} ${l.substring(2, 5)} ${l.substring(5, 7)} ${l.substring(7)}';
   }
 }
+
+// --- Transport ---------------------------------------------------------------
+
+enum TripMode {
+  taxi('Taxi', Icons.local_taxi_rounded),
+  clando('Clando', Icons.directions_car_filled_rounded),
+  moto('Moto', Icons.two_wheeler_rounded),
+  public('Bus · TER · BRT', Icons.directions_bus_rounded),
+  walk('À pied', Icons.directions_walk_rounded),
+  car('Ma voiture', Icons.drive_eta_rounded);
+
+  const TripMode(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+
+  /// Un véhicule tiers dont on peut noter la plaque.
+  bool get hasDriver => this == taxi || this == clando || this == moto;
+}
+
+enum TripStatus { active, arrived, cancelled, escalated, expired }
+
+class Trip {
+  const Trip({
+    required this.id,
+    required this.status,
+    required this.mode,
+    required this.destinationLabel,
+    required this.expectedArrival,
+    required this.startedAt,
+    this.destLat,
+    this.destLng,
+    this.endedAt,
+    this.vehiclePlate,
+    this.vehicleNote,
+    this.vehiclePhotoPath,
+    this.graceMinutes = 15,
+    this.extensions = 0,
+    this.checkinPending = false,
+  });
+
+  factory Trip.fromJson(Map<String, dynamic> j) {
+    final dest = (j['destination'] as Map?)?.cast<String, dynamic>();
+    return Trip(
+      id: j['id'] as String? ?? j['trip_id'] as String,
+      status: _enum(TripStatus.values, j['status'], TripStatus.active),
+      mode: _enum(TripMode.values, j['mode'], TripMode.taxi),
+      destinationLabel: j['destination_label'] as String? ?? 'Destination',
+      expectedArrival: _date(j['expected_arrival_at']),
+      startedAt: _date(j['started_at']),
+      endedAt: j['ended_at'] == null ? null : _date(j['ended_at']),
+      destLat: (dest?['lat'] as num?)?.toDouble(),
+      destLng: (dest?['lng'] as num?)?.toDouble(),
+      vehiclePlate: j['vehicle_plate'] as String?,
+      vehicleNote: j['vehicle_note'] as String?,
+      vehiclePhotoPath: j['vehicle_photo_path'] as String?,
+      graceMinutes: (j['grace_minutes'] as num?)?.toInt() ?? 15,
+      extensions: (j['extensions_count'] as num?)?.toInt() ?? 0,
+      checkinPending: j['checkin_pending'] == true,
+    );
+  }
+
+  final String id;
+  final TripStatus status;
+  final TripMode mode;
+  final String destinationLabel;
+  final DateTime expectedArrival;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final double? destLat;
+  final double? destLng;
+  final String? vehiclePlate;
+  final String? vehicleNote;
+  final String? vehiclePhotoPath;
+  final int graceMinutes;
+  final int extensions;
+  final bool checkinPending;
+
+  bool get isActive =>
+      endedAt == null &&
+      (status == TripStatus.active || status == TripStatus.escalated);
+
+  /// Avancement de 0 à 1 entre le départ et l'heure d'arrivée prévue.
+  double get progress {
+    final total = expectedArrival.difference(startedAt).inSeconds;
+    if (total <= 0) return 1;
+    final done = DateTime.now().difference(startedAt).inSeconds;
+    return (done / total).clamp(0, 1).toDouble();
+  }
+
+  Duration get remaining => expectedArrival.difference(DateTime.now());
+
+  /// Plaque lisible : DK1234AB → DK-1234-AB.
+  String? get plateDisplay {
+    final p = vehiclePlate;
+    if (p == null || p.isEmpty) return null;
+    final m = RegExp(r'^([A-Z]{1,3})(\d{3,4})([A-Z]{1,3})$').firstMatch(p);
+    return m == null ? p : '${m[1]}-${m[2]}-${m[3]}';
+  }
+}
+
+/// Trajet d'une personne que je protège (côté proche).
+class WatchedTrip {
+  const WatchedTrip({
+    required this.tripId,
+    required this.status,
+    required this.mode,
+    required this.destinationLabel,
+    required this.expectedArrival,
+    required this.travelerName,
+    this.travelerId,
+  });
+
+  factory WatchedTrip.fromJson(Map<String, dynamic> j) {
+    final t = (j['traveler'] as Map?)?.cast<String, dynamic>() ?? const {};
+    return WatchedTrip(
+      tripId: j['trip_id'] as String,
+      status: _enum(TripStatus.values, j['status'], TripStatus.active),
+      mode: _enum(TripMode.values, j['mode'], TripMode.taxi),
+      destinationLabel: j['destination_label'] as String? ?? 'Destination',
+      expectedArrival: _date(j['expected_arrival_at']),
+      travelerName: t['full_name'] as String? ?? 'Un proche',
+      travelerId: (t['id'] ?? t['user_id']) as String?,
+    );
+  }
+
+  final String tripId;
+  final TripStatus status;
+  final TripMode mode;
+  final String destinationLabel;
+  final DateTime expectedArrival;
+  final String travelerName;
+  final String? travelerId;
+}
+
+class TransportSummary {
+  const TransportSummary({
+    this.activeTrip,
+    this.watched = const [],
+    this.recent = const [],
+    this.vehicles = const [],
+  });
+
+  factory TransportSummary.fromJson(Map<String, dynamic> j) => TransportSummary(
+    activeTrip: j['active_trip'] == null
+        ? null
+        : Trip.fromJson((j['active_trip'] as Map).cast<String, dynamic>()),
+    watched: [
+      for (final w in (j['watched_trips'] as List? ?? const []))
+        WatchedTrip.fromJson((w as Map).cast<String, dynamic>()),
+    ],
+    recent: [
+      for (final t in (j['recent_trips'] as List? ?? const []))
+        Trip.fromJson((t as Map).cast<String, dynamic>()),
+    ],
+    vehicles: [
+      for (final v in (j['vehicles'] as List? ?? const []))
+        (v as Map).cast<String, dynamic>(),
+    ],
+  );
+
+  final Trip? activeTrip;
+  final List<WatchedTrip> watched;
+  final List<Trip> recent;
+  final List<Map<String, dynamic>> vehicles;
+}

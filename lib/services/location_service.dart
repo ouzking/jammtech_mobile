@@ -6,7 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../data/backend.dart';
 
 /// Raisons pour lesquelles la position est envoyée au serveur.
-enum TrackingReason { sos, share, silent }
+enum TrackingReason { sos, share, silent, trip }
 
 /// Flux GPS unique qui alimente `push_location` tant qu'au moins une raison est active.
 ///
